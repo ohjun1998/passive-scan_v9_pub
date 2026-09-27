@@ -1,0 +1,22 @@
+{
+  "scope": {
+    "include": ["example.com", "*.example.com"],
+    "exclude": ["payments.example.com"],
+    "exclude_paths": ["^/logout(?:/|$)"]
+  },
+  "collectors": ["gau", "waybackurls"],
+  "network": {
+    "requests_per_second": 1,
+    "max_requests_per_host": 100,
+    "max_requests_total": 1000,
+    "timeout": 10,
+    "retries": 1,
+    "max_body_bytes": 2097152
+  },
+  "max_js_files": 200,
+  "crawl_depth": 2,
+  "max_crawl_pages": 20,
+  "max_screenshots": 20,
+  "confirm_status_changes": true,
+  "ai": {"model": "", "max_candidates": 50}
+}

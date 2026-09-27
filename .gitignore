@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+state/
+reports/
+config.json
+*.har
+*.sqlite*
+*.db*
+.env
+*.gpg
+*.key
+dist/
+.checkpoint/
