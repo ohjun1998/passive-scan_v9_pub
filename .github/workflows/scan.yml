@@ -1,0 +1,86 @@
+name: Recon v9
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [collect, probe, browser]
+        default: collect
+        description: 'collect has no target probing; probe/browser contact scoped targets'
+      notify:
+        type: boolean
+        default: false
+        description: 'Send count-only Discord summary'
+permissions:
+  contents: read
+concurrency:
+  group: recon-v9-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECON_CONFIG: ${{ secrets.RECON_CONFIG }}
+      REPORT_PASSWORD: ${{ secrets.REPORT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - name: Validate configuration
+        run: |
+          test -n "$REPORT_PASSWORD" || { echo 'Set REPORT_PASSWORD secret'; exit 1; }
+          test -n "$RECON_CONFIG" || { echo 'Set RECON_CONFIG secret'; exit 1; }
+          umask 077
+          python -c 'import os,json; c=json.loads(os.environ["RECON_CONFIG"]); open("config.json","w").write(json.dumps(c))'
+          python -m pip install -r requirements.txt
+      - uses: actions/cache/restore@v4
+        id: state
+        with:
+          path: .checkpoint/state.tar.gz.gpg
+          key: recon-v9-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: recon-v9-${{ github.ref_name }}-
+      - name: Restore encrypted state
+        run: |
+          if [ -f .checkpoint/state.tar.gz.gpg ]; then
+            gpg --batch --pinentry-mode loopback --passphrase-fd 3 --decrypt .checkpoint/state.tar.gz.gpg 3<<<"$REPORT_PASSWORD" | tar -xzf -
+          fi
+      - name: Install collection tools
+        run: bash scripts/install_tools.sh
+      - name: Install pinned secret detector
+        if: inputs.mode != 'collect'
+        run: bash scripts/install_trufflehog.sh
+      - name: Install optional browser
+        if: inputs.mode == 'browser'
+        run: |
+          python -m pip install -r requirements-browser.txt
+          python -m playwright install --with-deps chromium
+      - name: Run scoped pipeline
+        env:
+          RUN_MODE: ${{ inputs.mode }}
+        run: python -m recon run --mode "$RUN_MODE" --collect
+      - name: Encrypt state and reports
+        run: |
+          mkdir -p .checkpoint dist
+          tar -czf - state | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 -o .checkpoint/state.tar.gz.gpg 3<<<"$REPORT_PASSWORD"
+          tar -czf - reports | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 -o dist/reports.tar.gz.gpg 3<<<"$REPORT_PASSWORD"
+          cp .checkpoint/state.tar.gz.gpg dist/
+      - uses: actions/cache/save@v4
+        with:
+          path: .checkpoint/state.tar.gz.gpg
+          key: recon-v9-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recon-v9-encrypted-${{ github.run_id }}
+          path: dist/*.gpg
+          retention-days: 30
+          if-no-files-found: error
+      - name: Discord summary
+        if: inputs.notify
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python -c 'from recon.extras import notify_discord; notify_discord("reports/report.json")'
