@@ -1,0 +1,10 @@
+# Synthetic sample — offline only
+https://example.com/api/login
+https://example.com/api/profile
+https://example.com/api/payment
+https://example.com/api/refund
+https://example.com/api/export
+https://example.com/api/admin
+https://example.com/api/documents
+https://app.example.com/orders/123
+https://app.example.com/static/app.js?v=1
